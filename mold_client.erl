@@ -15,7 +15,8 @@ start_link(Addr, Port, RecoveryPort) ->
 %%% Server functions
 init([_Addr, Port, _RecoveryPort]) ->
     {ok, _Socket} = gen_udp:open(Port, [binary, {active, true}, {reuseaddr, true}]),
-    {ok, state}.
+    {ok, FH} = file:open("mold_client.log", [write]),
+    {ok, {FH, 0}}.
 
 handle_call(_Msg, _From, State) ->
     {noreply, State}.
@@ -23,16 +24,24 @@ handle_call(_Msg, _From, State) ->
 handle_cast(_Msg, State) ->
     {noreply, State}.
 
-handle_info({udp, _Socket, _Interface, _Port, Packet}, State) ->
+handle_info({udp, _Socket, _Interface, _Port, Packet}, {File, ExpectedSeqID}) ->
     <<Name:10/binary, NS:64, C:16, Msg/binary>> = Packet,
     case Msg of
         <<>> -> % heartbeat, ignore
-            {noreply, State};
+            {noreply, ExpectedSeqID};
         _ ->
+            case NS of
+                ExpectedSeqID ->
+                    ok;
+                _ ->
+                    Msg1= io_lib:format("~p - Dropped packet!!! Expected sequence ID ~p, received ~p~n", [erlang:localtime(), ExpectedSeqID, NS]),
+                    file:write(File, Msg1)
+            end,
             PrettyName = string:strip(binary_to_list(Name)),
             Pretty = [X || X <- binary_to_list(Msg), X >= 32, X < 127],
-            io:format("~p (SeqID [~p] NumMsgs [~p]): ~p ~n",[PrettyName, NS, C, Pretty]),
-            {noreply, State}
+            Msg2 = io_lib:format("~p (SeqID [~p] NumMsgs [~p]): ~p ~n",[PrettyName, NS, C, Pretty]),
+            file:write(File, Msg2),
+            {noreply, {File, NS + C}}
     end.
 
 terminate(_Reason, _State) ->
