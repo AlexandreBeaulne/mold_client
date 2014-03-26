@@ -28,7 +28,7 @@ handle_info({udp, _Socket, _Interface, _Port, Packet}, {File, ExpectedSeqID}) ->
     <<Name:10/binary, NS:64, C:16, Msg/binary>> = Packet,
     case Msg of
         <<>> -> % heartbeat, ignore
-            {noreply, ExpectedSeqID};
+            {noreply, {File, ExpectedSeqID}};
         _ ->
             case NS of
                 ExpectedSeqID ->
